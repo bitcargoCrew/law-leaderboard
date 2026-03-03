@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>$LAW Leaderboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              lukso: {
+                pink: '#FE005B',
+                purple: '#6B5AED',
+                blue: '#008CFF',
+                cyan: '#00D1C7',
+                dark: '#0D0D12',
+                light: '#F5F5F7',
+              },
+            },
+            fontFamily: {
+              sans: ['Inter', 'system-ui', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        font-family: 'Inter', system-ui, sans-serif;
+      }
+
+      .gradient-text {
+        background: linear-gradient(to right, #FE005B, #6B5AED, #008CFF);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .medal-gold {
+        background: linear-gradient(135deg, #FFD700, #FFA500);
+      }
+      .medal-silver {
+        background: linear-gradient(135deg, #C0C0C0, #A8A8A8);
+      }
+      .medal-bronze {
+        background: linear-gradient(135deg, #CD7F32, #B8690E);
+      }
+
+      .row-hover {
+        transition: background-color 0.15s ease;
+      }
+      .row-hover:hover {
+        background-color: rgba(107, 90, 237, 0.06);
+      }
+      .dark .row-hover:hover {
+        background-color: rgba(107, 90, 237, 0.12);
+      }
+
+      .avatar-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+      }
+
+      .fade-in {
+        animation: fadeIn 0.3s ease-in;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .spinner {
+        border: 3px solid rgba(107, 90, 237, 0.2);
+        border-top-color: #6B5AED;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+
+      .refresh-pulse {
+        animation: pulse 1s ease-in-out;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+
+      /* Scrollbar styling for dark mode */
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: rgba(107, 90, 237, 0.3); border-radius: 3px; }
+      ::-webkit-scrollbar-thumb:hover { background: rgba(107, 90, 237, 0.5); }
+    </style>
+  </head>
+  <body class="bg-white dark:bg-lukso-dark text-gray-900 dark:text-white min-h-screen">
+    <div id="app" class="max-w-2xl mx-auto px-3 py-4 sm:px-4 sm:py-6">
+      <!-- Header -->
+      <header class="mb-4 sm:mb-6">
+        <div class="flex items-center justify-between mb-1">
+          <h1 class="text-xl sm:text-2xl font-bold gradient-text">$LAW Leaderboard</h1>
+          <button
+            id="refresh-btn"
+            onclick="refreshData()"
+            title="Refresh now"
+            class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
+            <svg class="w-4 h-4 text-gray-500 dark:text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        </div>
+        <div class="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+          <span id="holder-count"></span>
+          <span id="last-refresh"></span>
+        </div>
+      </header>
+
+      <!-- Loading state -->
+      <div id="loading" class="flex flex-col items-center justify-center py-16">
+        <div class="spinner mb-3"></div>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Loading holders...</p>
+      </div>
+
+      <!-- Error state -->
+      <div id="error" class="hidden text-center py-16">
+        <p class="text-red-500 dark:text-red-400 text-sm mb-3" id="error-msg"></p>
+        <button onclick="refreshData()" class="text-sm text-lukso-purple hover:underline">Try again</button>
+      </div>
+
+      <!-- Leaderboard list -->
+      <div id="leaderboard" class="hidden">
+        <div id="rows" class="divide-y divide-gray-100 dark:divide-gray-800"></div>
+
+        <!-- Load more -->
+        <div id="load-more-container" class="mt-4 text-center hidden">
+          <button
+            id="load-more-btn"
+            onclick="loadMore()"
+            class="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg
+                   bg-gradient-to-r from-lukso-pink/10 to-lukso-purple/10
+                   hover:from-lukso-pink/20 hover:to-lukso-purple/20
+                   text-lukso-purple dark:text-lukso-purple transition-all"
+          >
+            Load More
+          </button>
+          <div id="load-more-spinner" class="hidden">
+            <div class="spinner mx-auto" style="width:24px;height:24px;border-width:2px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // ─── Config ──────────────────────────────────────────────────────
+      const INDEXER = 'https://envio.lukso-mainnet.universal.tech/v1/graphql'
+      const LAW_ADDRESS = '0x012f988480cd6ee2b88dfa5e6877cc4bdff96f5a'
+      const IPFS_GATEWAY = 'https://api.universalprofile.cloud/ipfs/'
+      const PAGE_SIZE = 50
+      const REFRESH_INTERVAL = 60_000
+      const PROFILE_BASE_URL = 'https://universaleverything.io/'
+
+      // ─── State ───────────────────────────────────────────────────────
+      let allHolders = []
+      let profileCache = new Map()
+      let totalCount = 0
+      let currentOffset = 0
+      let isLoading = false
+      let refreshTimer = null
+
+      // ─── Dark mode detection ─────────────────────────────────────────
+      function initDarkMode() {
+        if (
+          window.matchMedia &&
+          window.matchMedia('(prefers-color-scheme: dark)').matches
+        ) {
+          document.documentElement.classList.add('dark')
+        }
+        window
+          .matchMedia('(prefers-color-scheme: dark)')
+          .addEventListener('change', (e) => {
+            document.documentElement.classList.toggle('dark', e.matches)
+          })
+      }
+
+      // ─── GraphQL helper ──────────────────────────────────────────────
+      async function gql(query, variables = {}) {
+        const res = await fetch(INDEXER, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, variables }),
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const json = await res.json()
+        if (json.errors) throw new Error(json.errors[0].message)
+        return json.data
+      }
+
+      // ─── Fetch holders ───────────────────────────────────────────────
+      async function fetchHolders(offset = 0, limit = PAGE_SIZE) {
+        const query = `
+          query GetHolders($asset: String!, $offset: Int!, $limit: Int!) {
+            Hold(
+              where: {
+                asset_id: { _eq: $asset }
+                balance: { _gt: "0" }
+              }
+              order_by: { balance: desc }
+              limit: $limit
+              offset: $offset
+            ) {
+              profile_id
+              balance
+            }
+            Hold_aggregate(
+              where: {
+                asset_id: { _eq: $asset }
+                balance: { _gt: "0" }
+              }
+            ) {
+              aggregate { count }
+            }
+          }
+        `
+        const data = await gql(query, {
+          asset: LAW_ADDRESS,
+          offset,
+          limit,
+        })
+        return {
+          holders: data.Hold || [],
+          count: data.Hold_aggregate?.aggregate?.count || 0,
+        }
+      }
+
+      // ─── Fetch profiles in batch ─────────────────────────────────────
+      async function fetchProfiles(addresses) {
+        // Filter out already-cached addresses
+        const uncached = addresses.filter((a) => !profileCache.has(a))
+        if (uncached.length === 0) return
+
+        const query = `
+          query GetProfiles($ids: [String!]!) {
+            Profile(where: { id: { _in: $ids } }) {
+              id
+              name
+              profileImages(
+                where: { error: { _is_null: true } }
+                order_by: { width: asc }
+              ) {
+                width
+                src
+                url
+              }
+            }
+          }
+        `
+        const data = await gql(query, { ids: uncached })
+        const profiles = data.Profile || []
+        for (const p of profiles) {
+          profileCache.set(p.id, {
+            name: p.name,
+            imageUrl: getBestImageUrl(p.profileImages),
+          })
+        }
+        // Mark addresses with no profile found
+        for (const addr of uncached) {
+          if (!profileCache.has(addr)) {
+            profileCache.set(addr, { name: null, imageUrl: null })
+          }
+        }
+      }
+
+      // ─── Image selection (closest to 200px) ──────────────────────────
+      function getBestImageUrl(images) {
+        if (!images || images.length === 0) return null
+        let best = images[0]
+        let bestDiff = Math.abs(best.width - 200)
+        for (const img of images) {
+          const diff = Math.abs(img.width - 200)
+          if (diff < bestDiff) {
+            best = img
+            bestDiff = diff
+          }
+        }
+        const rawUrl = best.src || best.url
+        if (!rawUrl) return null
+        return convertIpfsUrl(rawUrl)
+      }
+
+      // ─── IPFS URL conversion ─────────────────────────────────────────
+      function convertIpfsUrl(url) {
+        if (!url) return url
+        if (url.startsWith('http://') || url.startsWith('https://'))
+          return url
+        if (url.startsWith('ipfs://')) {
+          const hash = url.replace('ipfs://', '').replace(/^ipfs\//, '')
+          return IPFS_GATEWAY + hash
+        }
+        if (url.startsWith('Qm') || url.startsWith('baf'))
+          return IPFS_GATEWAY + url
+        return url
+      }
+
+      // ─── Format address ──────────────────────────────────────────────
+      function formatAddress(address, chars = 4) {
+        if (!address || address.length < 10) return address
+        return address.slice(0, chars + 2) + '...' + address.slice(-chars)
+      }
+
+      // ─── Format balance (18 decimals) ────────────────────────────────
+      function formatBalance(raw) {
+        if (!raw || raw === '0') return '0.00'
+        const str = raw.padStart(19, '0') // ensure at least 19 chars
+        const intPart = str.slice(0, str.length - 18) || '0'
+        const decPart = str.slice(str.length - 18, str.length - 16) // 2 decimal places
+        const formatted =
+          parseInt(intPart).toLocaleString('en-US') + '.' + decPart
+        return formatted
+      }
+
+      // ─── Generate avatar color from address ──────────────────────────
+      function addressColor(address) {
+        let hash = 0
+        for (let i = 2; i < address.length; i++) {
+          hash = address.charCodeAt(i) + ((hash << 5) - hash)
+        }
+        const h = Math.abs(hash) % 360
+        return `hsl(${h}, 65%, 55%)`
+      }
+
+      // ─── Render a single row ─────────────────────────────────────────
+      function renderRow(holder, rank) {
+        const profile = profileCache.get(holder.profile_id) || {}
+        const name = profile.name || null
+        const imageUrl = profile.imageUrl || null
+        const displayName = name || formatAddress(holder.profile_id, 4)
+        const profileLink = PROFILE_BASE_URL + holder.profile_id
+
+        // Medal badge for top 3
+        let rankHtml = ''
+        if (rank === 1) {
+          rankHtml = `<span class="medal-gold w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm">1</span>`
+        } else if (rank === 2) {
+          rankHtml = `<span class="medal-silver w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm">2</span>`
+        } else if (rank === 3) {
+          rankHtml = `<span class="medal-bronze w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm">3</span>`
+        } else {
+          rankHtml = `<span class="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center text-xs font-medium text-gray-400 dark:text-gray-500">${rank}</span>`
+        }
+
+        // Avatar
+        let avatarHtml = ''
+        if (imageUrl) {
+          avatarHtml = `<img
+            src="${imageUrl}"
+            alt=""
+            class="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover bg-gray-200 dark:bg-gray-700 flex-shrink-0"
+            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+          /><span
+            class="avatar-placeholder w-8 h-8 sm:w-9 sm:h-9 rounded-full flex-shrink-0"
+            style="display:none;background:${addressColor(holder.profile_id)};color:white;"
+          >${holder.profile_id.slice(2, 4)}</span>`
+        } else {
+          avatarHtml = `<span
+            class="avatar-placeholder w-8 h-8 sm:w-9 sm:h-9 rounded-full flex-shrink-0"
+            style="background:${addressColor(holder.profile_id)};color:white;"
+          >${holder.profile_id.slice(2, 4)}</span>`
+        }
+
+        return `
+          <div class="row-hover flex items-center gap-2 sm:gap-3 py-2.5 sm:py-3 px-1 sm:px-2 rounded-lg fade-in">
+            <div class="flex-shrink-0">${rankHtml}</div>
+            <a href="${profileLink}" target="_blank" rel="noopener"
+               class="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1 hover:opacity-80 transition-opacity">
+              ${avatarHtml}
+              <span class="truncate text-sm font-medium ${name ? '' : 'font-mono text-xs text-gray-500 dark:text-gray-400'}">${displayName}</span>
+            </a>
+            <span class="flex-shrink-0 text-sm font-mono font-medium text-right tabular-nums">
+              ${formatBalance(holder.balance)}
+            </span>
+          </div>
+        `
+      }
+
+      // ─── Render the leaderboard ──────────────────────────────────────
+      function renderLeaderboard(append = false) {
+        const rowsEl = document.getElementById('rows')
+        const startIndex = append ? rowsEl.children.length : 0
+
+        if (!append) rowsEl.innerHTML = ''
+
+        const slice = append
+          ? allHolders.slice(startIndex)
+          : allHolders
+
+        const fragment = document.createDocumentFragment()
+        slice.forEach((holder, i) => {
+          const div = document.createElement('div')
+          div.innerHTML = renderRow(holder, startIndex + i + 1)
+          fragment.appendChild(div.firstElementChild)
+        })
+        rowsEl.appendChild(fragment)
+
+        // Update count
+        document.getElementById('holder-count').textContent =
+          `${totalCount.toLocaleString()} holders`
+
+        // Show/hide load more
+        const loadMoreContainer = document.getElementById('load-more-container')
+        if (allHolders.length < totalCount) {
+          loadMoreContainer.classList.remove('hidden')
+        } else {
+          loadMoreContainer.classList.add('hidden')
+        }
+
+        // Update refresh time
+        updateRefreshTime()
+      }
+
+      // ─── Update last refresh time ────────────────────────────────────
+      let lastRefreshDate = null
+      function updateRefreshTime() {
+        if (!lastRefreshDate) return
+        const el = document.getElementById('last-refresh')
+        const seconds = Math.floor((Date.now() - lastRefreshDate) / 1000)
+        if (seconds < 5) {
+          el.textContent = 'just now'
+        } else if (seconds < 60) {
+          el.textContent = `${seconds}s ago`
+        } else {
+          el.textContent = `${Math.floor(seconds / 60)}m ago`
+        }
+      }
+      setInterval(updateRefreshTime, 5000)
+
+      // ─── Show/hide states ────────────────────────────────────────────
+      function showLoading() {
+        document.getElementById('loading').classList.remove('hidden')
+        document.getElementById('error').classList.add('hidden')
+        document.getElementById('leaderboard').classList.add('hidden')
+      }
+
+      function showError(msg) {
+        document.getElementById('loading').classList.add('hidden')
+        document.getElementById('error').classList.remove('hidden')
+        document.getElementById('error-msg').textContent = msg
+        document.getElementById('leaderboard').classList.add('hidden')
+      }
+
+      function showLeaderboard() {
+        document.getElementById('loading').classList.add('hidden')
+        document.getElementById('error').classList.add('hidden')
+        document.getElementById('leaderboard').classList.remove('hidden')
+      }
+
+      // ─── Initial load ────────────────────────────────────────────────
+      async function initialLoad() {
+        showLoading()
+        try {
+          const { holders, count } = await fetchHolders(0)
+          allHolders = holders
+          totalCount = count
+          currentOffset = holders.length
+          profileCache.clear()
+          await fetchProfiles(holders.map((h) => h.profile_id))
+          lastRefreshDate = Date.now()
+          renderLeaderboard()
+          showLeaderboard()
+        } catch (err) {
+          console.error('Failed to load leaderboard:', err)
+          showError('Failed to load leaderboard. ' + err.message)
+        }
+      }
+
+      // ─── Refresh (re-fetch current page) ─────────────────────────────
+      async function refreshData() {
+        if (isLoading) return
+        isLoading = true
+        const btn = document.getElementById('refresh-btn')
+        btn.classList.add('refresh-pulse')
+
+        try {
+          // Re-fetch all currently loaded holders
+          const limit = allHolders.length || PAGE_SIZE
+          const { holders, count } = await fetchHolders(0, limit)
+          allHolders = holders
+          totalCount = count
+          currentOffset = holders.length
+          await fetchProfiles(holders.map((h) => h.profile_id))
+          lastRefreshDate = Date.now()
+          renderLeaderboard()
+          showLeaderboard()
+        } catch (err) {
+          console.error('Refresh failed:', err)
+          // Don't show error on refresh, keep stale data visible
+        } finally {
+          isLoading = false
+          btn.classList.remove('refresh-pulse')
+        }
+      }
+
+      // ─── Load more ───────────────────────────────────────────────────
+      async function loadMore() {
+        if (isLoading) return
+        isLoading = true
+        const btn = document.getElementById('load-more-btn')
+        const spinner = document.getElementById('load-more-spinner')
+        btn.classList.add('hidden')
+        spinner.classList.remove('hidden')
+
+        try {
+          const { holders } = await fetchHolders(currentOffset)
+          if (holders.length > 0) {
+            allHolders = allHolders.concat(holders)
+            currentOffset += holders.length
+            await fetchProfiles(holders.map((h) => h.profile_id))
+            renderLeaderboard(true)
+          }
+        } catch (err) {
+          console.error('Load more failed:', err)
+        } finally {
+          isLoading = false
+          btn.classList.remove('hidden')
+          spinner.classList.add('hidden')
+        }
+      }
+
+      // ─── Auto-refresh ────────────────────────────────────────────────
+      function startAutoRefresh() {
+        if (refreshTimer) clearInterval(refreshTimer)
+        refreshTimer = setInterval(refreshData, REFRESH_INTERVAL)
+      }
+
+      // ─── Boot ────────────────────────────────────────────────────────
+      initDarkMode()
+      initialLoad().then(startAutoRefresh)
+    </script>
+  </body>
+</html>
