@@ -144,8 +144,19 @@
         <button onclick="refreshData()" class="text-sm text-lukso-purple hover:underline">Try again</button>
       </div>
 
+      <!-- Recent claims -->
+      <div id="recent-claims" class="hidden mb-4 sm:mb-5">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Recent Claims</h2>
+        </div>
+        <div id="recent-rows" class="space-y-1.5"></div>
+      </div>
+
       <!-- Leaderboard list -->
       <div id="leaderboard" class="hidden">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500">Top Holders</h2>
+        </div>
         <div id="rows" class="divide-y divide-gray-100 dark:divide-gray-800"></div>
 
         <!-- Load more -->
@@ -532,6 +543,7 @@
           lastRefreshDate = Date.now()
           renderLeaderboard()
           showLeaderboard()
+          loadRecentClaims()
         } catch (err) {
           console.error('Refresh failed:', err)
           // Don't show error on refresh, keep stale data visible
@@ -567,6 +579,74 @@
         }
       }
 
+      // ─── Recent claims ───────────────────────────────────────────────
+      const HARVEY_ADDRESS = '0x36c2034025705ad0e681d860f0fd51e84c37b629'
+
+      async function fetchRecentClaims() {
+        const query = `
+          query GetRecentClaims($asset: String!, $from: String!) {
+            Transfer(
+              where: {
+                asset_id: { _eq: $asset }
+                from_id: { _eq: $from }
+              }
+              order_by: { timestamp: desc }
+              limit: 8
+            ) {
+              to_id
+              value
+              timestamp
+            }
+          }
+        `
+        const data = await gql(query, { asset: LAW_ADDRESS, from: HARVEY_ADDRESS })
+        return data.Transfer || []
+      }
+
+      function timeAgo(timestamp) {
+        const secs = Math.floor(Date.now() / 1000) - timestamp
+        if (secs < 60) return 'just now'
+        if (secs < 3600) return Math.floor(secs / 60) + 'm ago'
+        if (secs < 86400) return Math.floor(secs / 3600) + 'h ago'
+        return Math.floor(secs / 86400) + 'd ago'
+      }
+
+      function renderRecentClaim(transfer) {
+        const profile = profileCache.get(transfer.to_id) || {}
+        const name = profile.name || formatAddress(transfer.to_id, 4)
+        const nameClass = profile.name ? 'font-medium' : 'font-mono text-gray-500 dark:text-gray-400'
+        const profileLink = PROFILE_BASE_URL + transfer.to_id
+        const amount = formatBalance(transfer.value.toString())
+        return `
+          <div class="flex items-center gap-2 py-1.5 px-2 rounded-lg text-xs fade-in
+                      bg-green-500/5 dark:bg-green-500/5 border border-green-500/10">
+            <svg class="w-3 h-3 text-green-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
+            </svg>
+            <a href="${profileLink}" target="_blank" rel="noopener"
+               class="truncate ${nameClass} hover:opacity-80 transition-opacity">${name}</a>
+            <span class="ml-auto flex-shrink-0 font-mono font-medium text-green-600 dark:text-green-400">+${amount}</span>
+            <span class="flex-shrink-0 text-gray-400 dark:text-gray-500">${timeAgo(transfer.timestamp)}</span>
+          </div>
+        `
+      }
+
+      async function loadRecentClaims() {
+        try {
+          const transfers = await fetchRecentClaims()
+          if (transfers.length === 0) return
+
+          // Fetch profiles for recipients
+          await fetchProfiles(transfers.map(t => t.to_id))
+
+          const container = document.getElementById('recent-rows')
+          container.innerHTML = transfers.map(renderRecentClaim).join('')
+          document.getElementById('recent-claims').classList.remove('hidden')
+        } catch (err) {
+          console.error('Failed to load recent claims:', err)
+        }
+      }
+
       // ─── Auto-refresh ────────────────────────────────────────────────
       function startAutoRefresh() {
         if (refreshTimer) clearInterval(refreshTimer)
@@ -575,7 +655,7 @@
 
       // ─── Boot ────────────────────────────────────────────────────────
       initDarkMode()
-      initialLoad().then(startAutoRefresh)
+      initialLoad().then(() => { startAutoRefresh(); loadRecentClaims() })
     </script>
   </body>
 </html>
