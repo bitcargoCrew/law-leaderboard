@@ -175,6 +175,7 @@
       const PAGE_SIZE = 50
       const REFRESH_INTERVAL = 60_000
       const PROFILE_BASE_URL = 'https://universaleverything.io/'
+      const TOTAL_SUPPLY = 10_000_000 // 10M $LAW
 
       // ─── State ───────────────────────────────────────────────────────
       let allHolders = []
@@ -268,6 +269,9 @@
                 src
                 url
               }
+              followed_aggregate {
+                aggregate { count }
+              }
             }
           }
         `
@@ -277,12 +281,13 @@
           profileCache.set(p.id, {
             name: p.name,
             imageUrl: getBestImageUrl(p.profileImages),
+            followers: p.followed_aggregate?.aggregate?.count || 0,
           })
         }
         // Mark addresses with no profile found
         for (const addr of uncached) {
           if (!profileCache.has(addr)) {
-            profileCache.set(addr, { name: null, imageUrl: null })
+            profileCache.set(addr, { name: null, imageUrl: null, followers: 0 })
           }
         }
       }
@@ -335,6 +340,16 @@
         return formatted
       }
 
+      // ─── Percent of supply ─────────────────────────────────────────
+      function percentSupply(raw) {
+        if (!raw || raw === '0') return '0%'
+        const bal = parseFloat(raw) / 1e18
+        const pct = (bal / TOTAL_SUPPLY) * 100
+        if (pct >= 1) return pct.toFixed(1) + '%'
+        if (pct >= 0.01) return pct.toFixed(2) + '%'
+        return '<0.01%'
+      }
+
       // ─── Generate avatar color from address ──────────────────────────
       function addressColor(address) {
         let hash = 0
@@ -350,6 +365,7 @@
         const profile = profileCache.get(holder.profile_id) || {}
         const name = profile.name || null
         const imageUrl = profile.imageUrl || null
+        const followers = profile.followers || 0
         const displayName = name || formatAddress(holder.profile_id, 4)
         const profileLink = PROFILE_BASE_URL + holder.profile_id
 
@@ -384,17 +400,26 @@
           >${holder.profile_id.slice(2, 4)}</span>`
         }
 
+        // Follower badge
+        const followerHtml = followers > 0
+          ? `<span class="text-[10px] text-gray-400 dark:text-gray-500">${followers} follower${followers !== 1 ? 's' : ''}</span>`
+          : ''
+
         return `
           <div class="row-hover flex items-center gap-2 sm:gap-3 py-2.5 sm:py-3 px-1 sm:px-2 rounded-lg fade-in">
             <div class="flex-shrink-0">${rankHtml}</div>
             <a href="${profileLink}" target="_blank" rel="noopener"
                class="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1 hover:opacity-80 transition-opacity">
               ${avatarHtml}
-              <span class="truncate text-sm font-medium ${name ? '' : 'font-mono text-xs text-gray-500 dark:text-gray-400'}">${displayName}</span>
+              <div class="min-w-0">
+                <span class="truncate block text-sm font-medium ${name ? '' : 'font-mono text-xs text-gray-500 dark:text-gray-400'}">${displayName}</span>
+                ${followerHtml}
+              </div>
             </a>
-            <span class="flex-shrink-0 text-sm font-mono font-medium text-right tabular-nums">
-              ${formatBalance(holder.balance)}
-            </span>
+            <div class="flex-shrink-0 text-right">
+              <span class="block text-sm font-mono font-medium tabular-nums">${formatBalance(holder.balance)}</span>
+              <span class="block text-[10px] font-mono text-gray-400 dark:text-gray-500">${percentSupply(holder.balance)}</span>
+            </div>
           </div>
         `
       }
